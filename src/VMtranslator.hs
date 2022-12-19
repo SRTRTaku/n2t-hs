@@ -1,7 +1,7 @@
 module VMtranslator (
 vmtranslator ) where
 
-import qualified Data.Map as Map
+import Control.Monad.State.Lazy
 
 data VMCommand = CArithmetic ArithOp
                | CPush Segment Index
@@ -16,7 +16,7 @@ data VMCommand = CArithmetic ArithOp
 
 data ArithOp = Add | Sub | Neg | Eq | Gt | Lt
              | And | Or | Not 
-             deriving Show
+             deriving (Show, Eq)
 
 data Segment = SArgument
              | SLocal
@@ -43,7 +43,7 @@ type VMFileWithCommand = (FileName, [VMCommand])
 type AsmCode = String
 
 vmtranslator :: [VMFile] -> [AsmCode]
-vmtranslator = undefined
+vmtranslator = codeWrite . map parseFile
 
 --
 -- parse
@@ -87,24 +87,112 @@ parseToken2 "if-goto" symbol = CIf symbol
 parseToken2 _ _  = error "parseToken2: invalid token"
 
 parseToken3 :: Token -> Token -> Token ->  VMCommand
-parseToken3 "push" seg i
-    | Map.member seg segments = CPush (segments Map.! seg) (read i)
-    | otherwise = error "parseToken3 push: invalid segment"
-parseToken3 "pop" seg i
-    | Map.member seg segments = CPop (segments Map.! seg) (read i)
-    | otherwise = error "parseToken3 pop: invalid segment"
+parseToken3 "push" seg i = case lookup seg segments of
+    Just s -> CPush s (read i)
+    _ -> error "parseToken3 push: invalid segment"
+parseToken3 "pop" seg i = case lookup seg segments of
+    Just s -> CPop s (read i)
+    _ -> error "parseToken3 push: invalid segment"
 parseToken3 "function" name n = CFunction name (read n)
 parseToken3 "call" name n = CCall name (read n)
 parseToken3 _ _ _ = error "parseToken3: invalid token"
 
-segments :: Map.Map String Segment
+segments :: [(String, Segment)]
 segments
-    = Map.fromList [ ("argment", SArgument)
-                   , ("local", SLocal)
-                   , ("static", SStatic)
-                   , ("constant", SConstant)
-                   , ("this", SThis)
-                   , ("that", SThat)
-                   , ("pointer", SPointer)
-                   , ("temp", STemp)
-                   ]
+    = [ ("argment", SArgument)
+    , ("local", SLocal)
+    , ("static", SStatic)
+    , ("constant", SConstant)
+    , ("this", SThis)
+    , ("that", SThat)
+    , ("pointer", SPointer)
+    , ("temp", STemp)
+    ]
+
+--
+-- codeWrite
+--
+
+codeWrite :: [VMFileWithCommand] -> [AsmCode]
+codeWrite fs =  cs 
+    where
+        (cs, _) = runState (concatMapM codeWriteFile fs) 0
+
+codeWriteFile :: VMFileWithCommand -> State Int [AsmCode]
+codeWriteFile (name, cs) = concatMapM codeWriteLine cs
+
+concatMapM :: Monad m => (a -> m [b]) -> [a] -> m [b]
+concatMapM op = foldr f (pure [])
+    where
+        f x xs = do
+            x' <- op x
+            if null x' then xs else do
+                xs' <- xs
+                pure $ x' ++ xs'
+
+codeWriteLine :: VMCommand -> State Int [AsmCode]
+codeWriteLine (CArithmetic op) 
+    | op `elem` [Neg, Not] = return $ codeArithmetic1 op
+    | op `elem` [Add, Sub, And, Or] = return $ codeArithmetic2 op
+    | otherwise = codeComparison2 op
+codeWriteLine _ = error "codeWrite: invalid VMCommand"
+
+codeArithmetic1 :: ArithOp -> [AsmCode]
+codeArithmetic1 op
+    = [ "@SP"
+      , "A=M-1"
+      , code
+      ]
+    where code = case op of
+            Neg -> "M=-M"
+            Not -> "M=!M"
+            _ -> error "codeArithmetic1: invalid operation"
+
+codeArithmetic2 ::ArithOp -> [AsmCode]
+codeArithmetic2 op = code
+    where
+        code = [ "@SP"
+               , "M=M-1"
+               , "A=M"
+               , "D=M"
+               , "@SP"
+               , "A=M-1"
+               , code'
+               ]
+        -- y = D, x = M
+        code' = case op of
+            Add -> "M=D+M" -- x + y
+            Sub -> "M=M-D" -- x - y
+            And -> "M=D&M" -- x & y
+            Or ->  "M=D|M" -- x | y
+
+codeComparison2 ::ArithOp -> State Int [AsmCode]
+codeComparison2 op = do
+    n <- get
+    put (n + 2)
+    return $ code n
+    where
+        code n = [ "@SP"
+                 , "M=M-1"
+                 , "A=M"
+                 , "D=M"
+                 , "@SP"
+                 , "A=M-1"
+                 , "D=M-D" -- x - y
+                 , "@LARITH" ++ show n -- TRUE
+                 , "D;" ++ jump
+                 , "@SP"
+                 , "A=M-1"
+                 , "M=0" -- false
+                 , "@LARITH" ++ show (n+1) -- END
+                 , "JMP"
+                 , "(LARITH" ++ show n  ++  ")" -- TRUE
+                 , "@SP"
+                 , "A=M-1"
+                 , "M=-1" -- true
+                 , "(LARITH" ++ show (n+1)  ++  ")" -- END
+                 ]
+        jump = case op of
+            Eq -> "JPE"
+            Gt -> "JGL"
+            Lt -> "JLT"
