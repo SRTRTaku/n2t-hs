@@ -1,7 +1,9 @@
 module Assembler (
 assembler ) where
 
-import Data.Char (isDigit, isSpace)
+import Util
+
+import Data.Char (isDigit)
 import Data.List (mapAccumL)
 import qualified Data.Bits as Bits
 import qualified Data.Map as Map
@@ -81,20 +83,9 @@ testAsm2 =
     , "(INFINITE_LOOP)"
     , "   @INFINITE_LOOP"
     , "   0;JMP            // infinite loop"]
--- Remove white space & comments
-arrangeCode :: [AsmCode] -> [AsmCode]
-arrangeCode = filter (not . null) . map arrangeALine
-
-arrangeALine :: AsmCode -> AsmCode
-arrangeALine [] = []
-arrangeALine ('/':'/':cs) = []
-arrangeALine (c:cs)
-    | isSpace c = arrangeALine cs
-    | otherwise = c : arrangeALine cs
 
 -- Assembler
 assembler :: [AsmCode] -> [String]
---assembler = map (show . code . parseCommand) . arrangeCode
 assembler acs = map show cds
     where
         cs1 = map parseCommand . arrangeCode $ acs

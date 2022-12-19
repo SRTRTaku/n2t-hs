@@ -19,7 +19,7 @@ maintainer:         takumi.shiratori@gmail.com
 extra-source-files: CHANGELOG.md
 
 library
-    exposed-modules:  Assembler, VMtranslator
+    exposed-modules:  Util, Assembler, VMtranslator
 
     -- Modules included in this library but not exported.
     -- other-modules:
@@ -42,6 +42,7 @@ executable n2t-hs
     -- other-extensions:
     build-depends:
         base ^>=4.16.3.0,
+        directory,
         filepath,
         n2t-hs
 

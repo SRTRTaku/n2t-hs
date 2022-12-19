@@ -1,6 +1,7 @@
 module VMtranslator (
 vmtranslator ) where
 
+import Util
 import Control.Monad.State.Lazy
 
 data VMCommand = CArithmetic ArithOp
@@ -50,7 +51,7 @@ vmtranslator = codeWrite . map parseFile
 --
 
 parseFile :: VMFile -> VMFileWithCommand
-parseFile (fileName, cs) = (fileName, map parseCommand cs)
+parseFile (fileName, cs) = (fileName, map parseCommand . arrangeCode $ cs)
 
 parseCommand :: VMCode -> VMCommand
 parseCommand = parseToken . words
@@ -135,6 +136,8 @@ codeWriteLine (CArithmetic op)
     | op `elem` [Neg, Not] = return $ codeArithmetic1 op
     | op `elem` [Add, Sub, And, Or] = return $ codeArithmetic2 op
     | otherwise = codeComparison2 op
+codeWriteLine (CPush SConstant n)
+    = return [ "@"++show n,"D=A","@SP", "A=M", "M=D", "@SP", "M=M+1"]
 codeWriteLine _ = error "codeWrite: invalid VMCommand"
 
 codeArithmetic1 :: ArithOp -> [AsmCode]
@@ -185,7 +188,7 @@ codeComparison2 op = do
                  , "A=M-1"
                  , "M=0" -- false
                  , "@LARITH" ++ show (n+1) -- END
-                 , "JMP"
+                 , "0;JMP"
                  , "(LARITH" ++ show n  ++  ")" -- TRUE
                  , "@SP"
                  , "A=M-1"
@@ -193,6 +196,6 @@ codeComparison2 op = do
                  , "(LARITH" ++ show (n+1)  ++  ")" -- END
                  ]
         jump = case op of
-            Eq -> "JPE"
-            Gt -> "JGL"
+            Eq -> "JEQ"
+            Gt -> "JGT"
             Lt -> "JLT"

@@ -1,34 +1,42 @@
 module Main where
 
 import Assembler
+import VMtranslator
+import Control.Monad (when)
+import System.Exit
 import System.Environment (getArgs)
-import System.IO (openFile, hGetContents, hClose, hPutStr, IOMode(..))
-import System.FilePath (splitExtension)
+import System.IO (openFile, hGetContents, hClose, IOMode(..))
+import System.Directory (listDirectory)
+import System.FilePath (takeExtension, dropExtensions, (</>))
 
 type Mode = String
 
 main :: IO ()
 main = do
     args <- getArgs
-    if length args < 2 then putStrLn "too few args!"
-    else do
-        let (mode:fn:__) = args
-        -- input string
-        handle <- openFile fn ReadMode
-        text <- hGetContents handle
-        -- run func
-        let text' = run mode text
-        -- output string
-        handle' <- openFile (outPath fn) WriteMode
-        hPutStr handle' text'
-        hClose handle
-        hClose handle'
+    when (length args < 2) $ do
+        putStrLn "too few args!"
+        exitWith (ExitFailure 1)
+    let (mode:path:_) = args
+    case mode of
+        "asm" -> runAsm path
+        "vm" -> runVMTrans path
+        _ -> error"invalid mode"
 
-outPath :: String -> String
-outPath fn = fst ( splitExtension fn) ++ ".hack"
+runAsm :: String -> IO ()
+runAsm fn = do
+    handle <- openFile fn ReadMode
+    text <- hGetContents handle
+    let text' = unlines . assembler . lines $ text
+    putStr text'
+    hClose handle
 
-run :: Mode -> String -> String
-run mode = unlines . func . lines
-    where
-        func | mode == "asm" = assembler
-             | otherwise     = const ["invalid mode"]
+runVMTrans :: String -> IO ()
+runVMTrans dir = do
+    fns <- filter (\fn -> takeExtension fn == ".vm") <$> listDirectory dir
+    handles <- mapM (\fn -> openFile (dir </> fn) ReadMode) fns
+    texts <- mapM hGetContents handles
+    let texts' = map lines texts
+    let fns' = map dropExtensions fns
+    putStr $ unlines . vmtranslator $ zip fns' texts'
+    mapM_ hClose handles
