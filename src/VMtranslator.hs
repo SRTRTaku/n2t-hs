@@ -120,7 +120,7 @@ codeWrite fs =  cs
         (cs, _) = runState (concatMapM codeWriteFile fs) 0
 
 codeWriteFile :: VMFileWithCommand -> State Int [AsmCode]
-codeWriteFile (name, cs) = concatMapM codeWriteLine cs
+codeWriteFile (name, cs) = concatMapM (codeWriteLine name) cs
 
 concatMapM :: Monad m => (a -> m [b]) -> [a] -> m [b]
 concatMapM op = foldr f (pure [])
@@ -131,14 +131,14 @@ concatMapM op = foldr f (pure [])
                 xs' <- xs
                 pure $ x' ++ xs'
 
-codeWriteLine :: VMCommand -> State Int [AsmCode]
-codeWriteLine (CArithmetic op) 
+codeWriteLine :: FileName -> VMCommand -> State Int [AsmCode]
+codeWriteLine _ (CArithmetic op) 
     | op `elem` [Neg, Not] = return $ codeArithmetic1 op
     | op `elem` [Add, Sub, And, Or] = return $ codeArithmetic2 op
     | otherwise = codeComparison2 op
-codeWriteLine (CPush seg i) = return $ codePush seg i
-codeWriteLine (CPop seg i)  = return $ codePop seg i
-codeWriteLine _ = error "codeWrite: invalid VMCommand"
+codeWriteLine name (CPush seg i) = return $ codePush name seg i
+codeWriteLine name (CPop seg i)  = return $ codePop name seg i
+codeWriteLine _ _ = error "codeWrite: invalid VMCommand"
 
 codeArithmetic1 :: ArithOp -> [AsmCode]
 codeArithmetic1 op
@@ -200,15 +200,15 @@ codeComparison2 op = do
             Gt -> "JGT"
             Lt -> "JLT"
 
-codePush :: Segment -> Index -> [AsmCode]
-codePush SConstant = codePushConst 
-codePush SLocal    = codePushInd "LCL"
-codePush SArgument = codePushInd "ARG"
-codePush SThis     = codePushInd "THIS"
-codePush SThat     = codePushInd "THAT"
-codePush SPointer  = codePushDrct 3
-codePush STemp     = codePushDrct 5
-codePush SStatic   = codePushStatic
+codePush :: FileName -> Segment -> Index -> [AsmCode]
+codePush _ SConstant = codePushConst 
+codePush _ SLocal    = codePushInd "LCL"
+codePush _ SArgument = codePushInd "ARG"
+codePush _ SThis     = codePushInd "THIS"
+codePush _ SThat     = codePushInd "THAT"
+codePush _ SPointer  = codePushDrct 3
+codePush _ STemp     = codePushDrct 5
+codePush name SStatic   = codePushStatic name
 
 codePushConst :: Index -> [AsmCode]
 codePushConst i = [ "@" ++ show i, "D=A", "@SP", "A=M", "M=D", "@SP", "M=M+1"]
@@ -236,18 +236,26 @@ codePushDrct base i
       , "@SP"
       , "M=M+1"
       ]
-codePushStatic ::Index -> [AsmCode]
-codePushStatic = undefined
+codePushStatic :: FileName -> Index -> [AsmCode]
+codePushStatic name i
+    = [ "@" ++ name ++ "." ++ show i
+      , "D=M"
+      , "@SP"
+      , "A=M"
+      , "M=D"
+      , "@SP"
+      , "M=M+1"
+      ]
 
-codePop :: Segment -> Index -> [AsmCode]
-codePop SConstant = error "codePop: can not specify SConstant"
-codePop SLocal    = codePopInd "LCL"
-codePop SArgument = codePopInd "ARG"
-codePop SThis     = codePopInd "THIS"
-codePop SThat     = codePopInd "THAT"
-codePop SPointer  = codePopDrct 3
-codePop STemp     = codePopDrct 5
-codePop SStatic   = codePopStatic
+codePop :: FileName -> Segment -> Index -> [AsmCode]
+codePop _ SConstant = error "codePop: can not specify SConstant"
+codePop _ SLocal    = codePopInd "LCL"
+codePop _ SArgument = codePopInd "ARG"
+codePop _ SThis     = codePopInd "THIS"
+codePop _ SThat     = codePopInd "THAT"
+codePop _ SPointer  = codePopDrct 3
+codePop _ STemp     = codePopDrct 5
+codePop name SStatic   = codePopStatic name
 
 codePopInd :: String -> Index -> [AsmCode]
 codePopInd reg i
@@ -275,5 +283,12 @@ codePopDrct base i
       , "M=D"
       ]
 
-codePopStatic ::Index -> [AsmCode]
-codePopStatic = undefined
+codePopStatic :: FileName -> Index -> [AsmCode]
+codePopStatic name i
+    = [ "@SP"
+      , "M=M-1"
+      , "A=M"
+      , "D=M"
+      , "@" ++ name ++ "." ++ show i
+      , "M=D"
+      ]
