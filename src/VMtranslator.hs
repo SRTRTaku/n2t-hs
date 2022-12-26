@@ -26,7 +26,7 @@ data Segment = SArgument
              | SThis | SThat
              | SPointer
              | STemp
-             deriving Show
+             deriving (Show, Eq)
 
 type Index = Int
 type Symbol = String
@@ -100,7 +100,7 @@ parseToken3 _ _ _ = error "parseToken3: invalid token"
 
 segments :: [(String, Segment)]
 segments
-    = [ ("argment", SArgument)
+    = [ ("argument", SArgument)
     , ("local", SLocal)
     , ("static", SStatic)
     , ("constant", SConstant)
@@ -136,8 +136,8 @@ codeWriteLine (CArithmetic op)
     | op `elem` [Neg, Not] = return $ codeArithmetic1 op
     | op `elem` [Add, Sub, And, Or] = return $ codeArithmetic2 op
     | otherwise = codeComparison2 op
-codeWriteLine (CPush SConstant n)
-    = return [ "@"++show n,"D=A","@SP", "A=M", "M=D", "@SP", "M=M+1"]
+codeWriteLine (CPush seg i) = return $ codePush seg i
+codeWriteLine (CPop seg i)  = return $ codePop seg i
 codeWriteLine _ = error "codeWrite: invalid VMCommand"
 
 codeArithmetic1 :: ArithOp -> [AsmCode]
@@ -199,3 +199,81 @@ codeComparison2 op = do
             Eq -> "JEQ"
             Gt -> "JGT"
             Lt -> "JLT"
+
+codePush :: Segment -> Index -> [AsmCode]
+codePush SConstant = codePushConst 
+codePush SLocal    = codePushInd "LCL"
+codePush SArgument = codePushInd "ARG"
+codePush SThis     = codePushInd "THIS"
+codePush SThat     = codePushInd "THAT"
+codePush SPointer  = codePushDrct 3
+codePush STemp     = codePushDrct 5
+codePush SStatic   = codePushStatic
+
+codePushConst :: Index -> [AsmCode]
+codePushConst i = [ "@" ++ show i, "D=A", "@SP", "A=M", "M=D", "@SP", "M=M+1"]
+
+codePushInd :: String -> Index -> [AsmCode]
+codePushInd reg i
+    = [ "@" ++ reg
+      , "D=M"
+      , "@" ++ show i
+      , "A=D+A"
+      , "D=M"
+      , "@SP"
+      , "A=M"
+      , "M=D"
+      , "@SP"
+      , "M=M+1"
+      ]
+codePushDrct :: Int -> Index -> [AsmCode]
+codePushDrct base i
+    = [ "@" ++ show (base + i)
+      , "D=M"
+      , "@SP"
+      , "A=M"
+      , "M=D"
+      , "@SP"
+      , "M=M+1"
+      ]
+codePushStatic ::Index -> [AsmCode]
+codePushStatic = undefined
+
+codePop :: Segment -> Index -> [AsmCode]
+codePop SConstant = error "codePop: can not specify SConstant"
+codePop SLocal    = codePopInd "LCL"
+codePop SArgument = codePopInd "ARG"
+codePop SThis     = codePopInd "THIS"
+codePop SThat     = codePopInd "THAT"
+codePop SPointer  = codePopDrct 3
+codePop STemp     = codePopDrct 5
+codePop SStatic   = codePopStatic
+
+codePopInd :: String -> Index -> [AsmCode]
+codePopInd reg i
+    = [ "@" ++ reg
+      , "D=M"
+      , "@" ++ show i
+      , "D=D+A"
+      , "@R13"
+      , "M=D"
+      , "@SP"
+      , "M=M-1"
+      , "A=M"
+      , "D=M"
+      , "@R13"
+      , "A=M"
+      , "M=D"
+      ]
+codePopDrct :: Int -> Index -> [AsmCode]
+codePopDrct base i
+    = [ "@SP"
+      , "M=M-1"
+      , "A=M"
+      , "D=M"
+      , "@" ++ show (base + i)
+      , "M=D"
+      ]
+
+codePopStatic ::Index -> [AsmCode]
+codePopStatic = undefined
