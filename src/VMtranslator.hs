@@ -147,7 +147,9 @@ codeWriteLine fileName (_, CPop seg i)  = return $ codePop fileName seg i
 codeWriteLine _ (funcName, CLabel symbol) = return $ codeLabel funcName symbol
 codeWriteLine _ (funcName, CGoto symbol) = return $ codeGoto funcName symbol
 codeWriteLine _ (funcName, CIf symbol) = return $ codeIf funcName symbol
-codeWriteLine _ _  = error "codeWrite: invalid VMCommand"
+codeWriteLine _ (_, CFunction funcName nLocals) = return $ codeFunc funcName nLocals
+codeWriteLine _ (_, CReturn) = return codeReturn
+codeWriteLine _ (_, CCall funcName nArgs) = codeCall funcName nArgs
 
 codeArithmetic1 :: ArithOp -> [AsmCode]
 codeArithmetic1 op
@@ -318,6 +320,117 @@ codeIf funcName symbol
       , "M=M-1"
       , "A=M"
       , "D=M"
-      ,  "@" ++ funcName ++ "$" ++ symbol
+      , "@" ++ funcName ++ "$" ++ symbol
       , "D;JNE"
       ]
+
+codeFunc :: FuncName -> NLocals -> [AsmCode]
+codeFunc  funcName nLocals
+    = ("(" ++ funcName ++ ")") : (concat . replicate nLocals $ cs)
+    where
+        cs = [ "@SP"
+             , "A=M"
+             , "M=0"
+             , "@SP"
+             , "M=M+1"
+             ]
+
+codeReturn :: [AsmCode]
+codeReturn
+    = [ "@LCL" -- FLAME = LCL
+      , "D=M"
+      , "@R13"
+      , "M=D"
+      , "@5" -- RET = *(FLAME - 5)
+      , "A=D-A"
+      , "D=M"
+      , "@14"
+      , "M=D"
+      , "@SP" -- *ARG = pop
+      , "M=M-1"
+      , "A=M"
+      , "D=M"
+      , "@ARG"
+      , "A=M"
+      , "M=D"
+      , "@ARG" -- SP = ARG + 1
+      , "D=M+1"
+      , "@SP"
+      , "M=D"
+      , "@R13" -- THAT = *(FLAME - 1)
+      , "M=M-1" -- FLAME -= 1
+      , "A=M"
+      , "D=M"
+      , "@THAT"
+      , "M=D"
+      , "@R13" -- THIS = *(FLAME - 2)
+      , "M=M-1" -- FLAME -= 1
+      , "A=M"
+      , "D=M"
+      , "@THIS"
+      , "M=D"
+      , "@R13" -- ARG = *(FLAME - 3)
+      , "M=M-1" -- FLAME -= 1
+      , "A=M"
+      , "D=M"
+      , "@ARG"
+      , "M=D"
+      , "@R13" -- LCL = *(FLAME - 4)
+      , "M=M-1" -- FLAME -= 1
+      , "A=M"
+      , "D=M"
+      , "@LCL"
+      , "M=D"
+      , "@R14" -- goto RET
+      , "A=M"
+      , "0;JMP"
+      ]
+
+codeCall :: FuncName -> NArgs -> State Int [AsmCode]
+codeCall funcName nArgs = do
+    n <- get
+    put (n + 1)
+    return $ [] -- code n
+    where
+        code n = concat [ pushRetAddr ("LRET" ++ show n)
+                        , pushContext "LCL"
+                        , pushContext "ARG"
+                        , pushContext "THIS"
+                        , pushContext "THAT"
+                        ]
+                 ++ [ "@SP" -- ARG = SP - nArgs - 5
+                    , "D=A"
+                    , "@" ++ show (nArgs + 5)
+                    , "D=D-A"
+                    , "@ARG"
+                    , "M=D"
+                    , "@SP" -- LCL = SP
+                    , "D=A"
+                    , "@LCL"
+                    , "M=D"
+                    , "@" ++ funcName -- goto funcName
+                    , "0;JMP"
+                    , "(LRET" ++ show n ++ ")"
+                    ]
+pushRetAddr :: String -> [AsmCode]
+pushRetAddr retAddr
+    = [ "@" ++ retAddr
+      , "D=A"
+      , "@SP"
+      , "A=M"
+      , "M=D"
+      , "@SP"
+      , "M=M+1"
+      ]
+
+pushContext :: String -> [AsmCode]
+pushContext c
+    = [ "@" ++ c
+      , "D=M"
+      , "@SP"
+      , "A=M"
+      , "M=D"
+      , "@SP"
+      , "M=M+1"
+      ]
+
