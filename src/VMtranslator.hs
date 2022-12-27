@@ -118,7 +118,17 @@ segments
 codeWrite :: [VMFileWithCommand] -> [AsmCode]
 codeWrite fs =  cs 
     where
-        (cs, _) = runState (concatMapM codeWriteFile fs) 0
+        cs1 = concatMapM codeWriteFile fs
+        cs2 = (++) <$> initCmds <*> cs1 
+        (cs, _) = runState cs2 0
+
+initCmds :: State Int [AsmCode]
+initCmds = do
+    cs <- codeCall "Sys.init" 0
+    return (cs' ++ cs)
+    where
+        cs' = ["@256", "D=A", "@SP", "M=D"] 
+
 
 codeWriteFile :: VMFileWithCommand -> State Int [AsmCode]
 codeWriteFile (fileName, cs) = concatMapM (codeWriteLine fileName ) (zip funcNames cs)
@@ -324,6 +334,7 @@ codeIf funcName symbol
       , "D;JNE"
       ]
 
+-- Function calls
 codeFunc :: FuncName -> NLocals -> [AsmCode]
 codeFunc  funcName nLocals
     = ("(" ++ funcName ++ ")") : (concat . replicate nLocals $ cs)
@@ -390,7 +401,7 @@ codeCall :: FuncName -> NArgs -> State Int [AsmCode]
 codeCall funcName nArgs = do
     n <- get
     put (n + 1)
-    return $ [] -- code n
+    return $ code n
     where
         code n = concat [ pushRetAddr ("LRET" ++ show n)
                         , pushContext "LCL"
@@ -399,13 +410,13 @@ codeCall funcName nArgs = do
                         , pushContext "THAT"
                         ]
                  ++ [ "@SP" -- ARG = SP - nArgs - 5
-                    , "D=A"
+                    , "D=M"
                     , "@" ++ show (nArgs + 5)
                     , "D=D-A"
                     , "@ARG"
                     , "M=D"
                     , "@SP" -- LCL = SP
-                    , "D=A"
+                    , "D=M"
                     , "@LCL"
                     , "M=D"
                     , "@" ++ funcName -- goto funcName
