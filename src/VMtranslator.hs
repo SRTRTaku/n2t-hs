@@ -3,6 +3,7 @@ vmtranslator ) where
 
 import Util
 import Control.Monad.State.Lazy
+import Data.List (mapAccumL)
 
 data VMCommand = CArithmetic ArithOp
                | CPush Segment Index
@@ -120,7 +121,12 @@ codeWrite fs =  cs
         (cs, _) = runState (concatMapM codeWriteFile fs) 0
 
 codeWriteFile :: VMFileWithCommand -> State Int [AsmCode]
-codeWriteFile (name, cs) = concatMapM (codeWriteLine name) cs
+codeWriteFile (fileName, cs) = concatMapM (codeWriteLine fileName ) (zip funcNames cs)
+    where
+        (_, funcNames) = mapAccumL f "dummyFuncName" cs
+        f prev (CFunction funcName _) = (funcName, funcName)
+        f prev _ = (prev, prev)
+        
 
 concatMapM :: Monad m => (a -> m [b]) -> [a] -> m [b]
 concatMapM op = foldr f (pure [])
@@ -131,14 +137,17 @@ concatMapM op = foldr f (pure [])
                 xs' <- xs
                 pure $ x' ++ xs'
 
-codeWriteLine :: FileName -> VMCommand -> State Int [AsmCode]
-codeWriteLine _ (CArithmetic op) 
+codeWriteLine :: FileName -> (FuncName, VMCommand) -> State Int [AsmCode]
+codeWriteLine _ (_, CArithmetic op) 
     | op `elem` [Neg, Not] = return $ codeArithmetic1 op
     | op `elem` [Add, Sub, And, Or] = return $ codeArithmetic2 op
     | otherwise = codeComparison2 op
-codeWriteLine name (CPush seg i) = return $ codePush name seg i
-codeWriteLine name (CPop seg i)  = return $ codePop name seg i
-codeWriteLine _ _ = error "codeWrite: invalid VMCommand"
+codeWriteLine fileName (_, CPush seg i) = return $ codePush fileName seg i
+codeWriteLine fileName (_, CPop seg i)  = return $ codePop fileName seg i
+codeWriteLine _ (funcName, CLabel symbol) = return $ codeLabel funcName symbol
+codeWriteLine _ (funcName, CGoto symbol) = return $ codeGoto funcName symbol
+codeWriteLine _ (funcName, CIf symbol) = return $ codeIf funcName symbol
+codeWriteLine _ _  = error "codeWrite: invalid VMCommand"
 
 codeArithmetic1 :: ArithOp -> [AsmCode]
 codeArithmetic1 op
@@ -208,7 +217,7 @@ codePush _ SThis     = codePushInd "THIS"
 codePush _ SThat     = codePushInd "THAT"
 codePush _ SPointer  = codePushDrct 3
 codePush _ STemp     = codePushDrct 5
-codePush name SStatic   = codePushStatic name
+codePush fileName SStatic   = codePushStatic fileName
 
 codePushConst :: Index -> [AsmCode]
 codePushConst i = [ "@" ++ show i, "D=A", "@SP", "A=M", "M=D", "@SP", "M=M+1"]
@@ -237,8 +246,8 @@ codePushDrct base i
       , "M=M+1"
       ]
 codePushStatic :: FileName -> Index -> [AsmCode]
-codePushStatic name i
-    = [ "@" ++ name ++ "." ++ show i
+codePushStatic fileName i
+    = [ "@" ++ fileName ++ "." ++ show i
       , "D=M"
       , "@SP"
       , "A=M"
@@ -255,7 +264,7 @@ codePop _ SThis     = codePopInd "THIS"
 codePop _ SThat     = codePopInd "THAT"
 codePop _ SPointer  = codePopDrct 3
 codePop _ STemp     = codePopDrct 5
-codePop name SStatic   = codePopStatic name
+codePop fileName SStatic   = codePopStatic fileName
 
 codePopInd :: String -> Index -> [AsmCode]
 codePopInd reg i
@@ -284,11 +293,31 @@ codePopDrct base i
       ]
 
 codePopStatic :: FileName -> Index -> [AsmCode]
-codePopStatic name i
+codePopStatic fileName i
     = [ "@SP"
       , "M=M-1"
       , "A=M"
       , "D=M"
-      , "@" ++ name ++ "." ++ show i
+      , "@" ++ fileName ++ "." ++ show i
       , "M=D"
+      ]
+
+-- Program flow commands
+codeLabel :: FuncName -> Symbol -> [AsmCode]
+codeLabel funcName symbol = [ "(" ++ funcName ++ "$" ++ symbol ++ ")"]
+
+codeGoto :: FuncName -> Symbol -> [AsmCode]
+codeGoto funcName symbol
+    = [ "@" ++ funcName ++ "$" ++ symbol
+      , "0;JMP"
+      ]
+
+codeIf :: FuncName -> Symbol -> [AsmCode]
+codeIf funcName symbol
+    = [ "@SP"
+      , "M=M-1"
+      , "A=M"
+      , "D=M"
+      ,  "@" ++ funcName ++ "$" ++ symbol
+      , "D;JNE"
       ]
