@@ -2,6 +2,8 @@ module Main where
 
 import Assembler
 import VMtranslator
+import JackAnalyzer
+
 import Control.Monad (when)
 import System.Exit
 import System.Environment (getArgs)
@@ -21,6 +23,7 @@ main = do
     case mode of
         "asm" -> runAsm path
         "vm" -> runVMTrans path
+        "tk" -> runTokenizer path
         _ -> error"invalid mode"
 
 runAsm :: String -> IO ()
@@ -40,3 +43,11 @@ runVMTrans dir = do
     let fns' = map dropExtensions fns
     putStr $ unlines . vmtranslator $ zip fns' texts'
     mapM_ hClose handles
+
+runTokenizer :: String -> IO ()
+runTokenizer fn = do
+    handle <- openFile fn ReadMode
+    text <- hGetContents handle
+    let text' = printTokens . tokenizer $ text
+    putStr text'
+    hClose handle

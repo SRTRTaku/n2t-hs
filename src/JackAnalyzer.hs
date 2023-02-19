@@ -47,21 +47,17 @@ tokenizer s@(c:cs)
     | c `elem` symbolList = JtSymbol [c] : tokenizer cs
     | isDigit c = JtIntConst (read s1) : tokenizer s2
     | isAlpha c = token : tokenizer s4
-    | c == '"' = JtStrConst s5 : tokenizer s6
+    | c == '"' = JtStrConst s5 : tokenizer s6'
     where
         (s1, s2) = span isDigit s
         (s3, s4) = span isId s
         token = case lookup s3 keywordList of
             Nothing -> JtId s3
             (Just k) -> JtKeyword k
-        (s5, s6) = span (/= '"') s
+        (s5, s6) = span (/= '"') cs
         s6' | null s6 = error "tokenizer: not find close \""
             | otherwise = tail s6
-
-
-
-
-tokenizer s = [JtStrConst s]
+--tokenizer s = [JtStrConst s]
 
 isId :: Char -> Bool
 isId c = isDigit c || isAlpha c || (c == '_')
@@ -75,7 +71,7 @@ keywordList =
     [ ("class", KClass)
     , ("method", KMethod)
     , ("function", KFunction)
-    , ("cnstructor", KConstructor)
+    , ("constructor", KConstructor)
     , ("int", KInt )
     , ("char", KBoolean )
     , ("boolean", KChar)
@@ -115,18 +111,26 @@ printToken (JtSymbol s) = printTags "symbol" s'
            | s == "&" = "&amp;"
            | otherwise = s
 printToken (JtId i) = printTags "identifier" i
-printToken (JtIntConst n) = printTags "integertConstant" (show n)
+printToken (JtIntConst n) = printTags "integerConstant" (show n)
 printToken (JtStrConst s) = printTags "stringConstant" s
 
 printTags :: String -> String -> String
 printTags elem content
     = "<" ++ elem ++ "> " ++ content ++ " </" ++ elem ++ ">"
 --
-testProgram :: String
-testProgram = unlines
+testProgram1 :: String
+testProgram1 = unlines
     [ "class Bar {"
     , "    method Fraction foo(int y) {"
     , "        var int temp; // a variable"
     , "        let temp = (xxx+12)*-63;"
+    , "    }"
+     ,"}"]
+
+testProgram2 :: String
+testProgram2 = unlines
+    [ "class Bar {"
+    , "    method Fraction foo(int y) {"
+    , "        do Output.printstring(\"hello! mem.\");"
     , "    }"
      ,"}"]
