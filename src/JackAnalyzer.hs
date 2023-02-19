@@ -1,6 +1,7 @@
 module JackAnalyzer where
 
 import Data.Char (isSpace, isDigit, isAlpha)
+import Data.Tuple (swap)
 
 data JackToken = JtKeyword Keyword
                | JtSymbol Symbol
@@ -22,7 +23,7 @@ data Keyword = KClass
              | KTrue | KFalse
              | KNull
              | KThis
-             deriving Show
+             deriving (Show, Eq)
 
 type Symbol = String
 type Identifier = String
@@ -93,6 +94,34 @@ keywordList =
     , ("null", KNull)
     , ("this", KThis) ]
 
+--
+-- print
+--
+printTokens :: [JackToken] -> String
+printTokens ts = unlines $
+    ["<tokens>"] ++ tags ++ ["</tokens>"]
+    where tags = map printToken ts
+
+printToken :: JackToken -> String
+printToken (JtKeyword k) = case lookup k keywordList' of
+    Just s -> printTags "keyword" s
+    _ -> error "printToken: keyword is not found"
+    where
+        keywordList' = map swap keywordList
+printToken (JtSymbol s) = printTags "symbol" s'
+    where
+        s' | s == "<" = "&lt;"
+           | s == ">" = "&gt;"
+           | s == "&" = "&amp;"
+           | otherwise = s
+printToken (JtId i) = printTags "identifier" i
+printToken (JtIntConst n) = printTags "integertConstant" (show n)
+printToken (JtStrConst s) = printTags "stringConstant" s
+
+printTags :: String -> String -> String
+printTags elem content
+    = "<" ++ elem ++ "> " ++ content ++ " </" ++ elem ++ ">"
+--
 testProgram :: String
 testProgram = unlines
     [ "class Bar {"
